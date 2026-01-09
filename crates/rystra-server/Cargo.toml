@@ -1,0 +1,18 @@
+[package]
+name = "rystra-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rystra-server"
+path = "src/main.rs"
+
+[dependencies]
+rystra-core = { path = "../rystra-core" }
+tokio.workspace = true
+axum.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+uuid.workspace = true
