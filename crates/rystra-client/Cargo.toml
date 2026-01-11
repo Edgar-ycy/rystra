@@ -1,0 +1,7 @@
+[package]
+name = "rystra-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rystra-config = { path = "../rystra-config"}

@@ -1,0 +1,6 @@
+[package]
+name = "rystra-proxy-tcp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

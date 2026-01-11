@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/rystra-model",
+    "crates/rystra-proto",
+    "crates/rystra-plugin",
+    "crates/rystra-plugin-registry",
+    "crates/rystra-core",
+    "crates/rystra-net",
+    "crates/rystra-runtime",
+    "crates/rystra-config",
+    "crates/rystra-observe",
+    "crates/rystra-server",
+    "crates/rystra-client",
+    "crates/plugins/proxy/rystra-proxy-tcp",
+    "crates/plugins/transport/rystra-transport-tcp",
+    "crates/plugins/auth/rystra-auth-token",
+]
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92.0"
+
+[workspace.dependencies]
+
+serde = { version = "1", features = ["derive"] }
+toml = "0.9.8"

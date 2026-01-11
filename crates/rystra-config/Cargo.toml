@@ -1,0 +1,9 @@
+[package]
+name = "rystra-config"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rystra-model = { path = "../rystra-model" }
+toml.workspace = true
+serde.workspace = true

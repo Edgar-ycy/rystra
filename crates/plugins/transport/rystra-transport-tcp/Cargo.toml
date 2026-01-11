@@ -1,0 +1,6 @@
+[package]
+name = "rystra-transport-tcp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

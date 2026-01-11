@@ -1,0 +1,6 @@
+[package]
+name = "rystra-observe"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
