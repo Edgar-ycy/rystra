@@ -14,6 +14,10 @@ pub struct ClientConfig {
     pub proxies: Vec<Proxy>,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval: u64,
+    #[serde(default = "default_heartbeat_timeout")]
+    pub heartbeat_timeout: u64,
     #[serde(default = "default_web_server")]
     pub web_server: WebServerConfig,
 }
@@ -23,6 +27,12 @@ fn default_proxies() -> Vec<Proxy> {
 }
 fn default_log_level() -> String {
     "info".to_string()
+}
+fn default_heartbeat_interval() -> u64 {
+    30
+}
+fn default_heartbeat_timeout() -> u64 {
+    60
 }
 fn default_web_server() -> WebServerConfig {
     WebServerConfig {

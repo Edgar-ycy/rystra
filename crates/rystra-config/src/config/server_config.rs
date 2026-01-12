@@ -15,6 +15,8 @@ pub struct ServerConfig {
     pub max_connections: usize,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_heartbeat_timeout")]
+    pub heartbeat_timeout: u64,
     #[serde(default = "default_web_server")]
     pub web_server: WebServerConfig,
 }
@@ -30,6 +32,9 @@ fn default_max_connections() -> usize {
 }
 fn default_log_level() -> String {
     "info".to_string()
+}
+fn default_heartbeat_timeout() -> u64 {
+    90
 }
 fn default_web_server() -> WebServerConfig {
     WebServerConfig {

@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! rystra-net: 网络工具模块
+//!
+//! 规划功能：
+//! - io copy 工具
+//! - framing（消息分帧）
+//! - 连接 ID 生成
+//!
+//! 当前状态：占位，待实现

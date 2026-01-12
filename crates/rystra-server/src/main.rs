@@ -7,6 +7,7 @@ use rystra_proto::{AuthResponse, Message, OpenStream, RegisterProxyResponse, PRO
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::BufReader;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -46,6 +47,8 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.unwrap();
     info!(addr = %addr, "listening");
 
+    let heartbeat_timeout = config.heartbeat_timeout;
+
     loop {
         if shutdown.load(Ordering::SeqCst) {
             info!("shutting down");
@@ -66,7 +69,7 @@ async fn main() {
             let shutdown = shutdown.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, &auth, &pm, &cs, &sw, shutdown).await {
+                if let Err(e) = handle_connection(stream, &auth, &pm, &cs, &sw, shutdown, heartbeat_timeout).await {
                     error!(error = %e, "connection error");
                 }
             });
@@ -84,6 +87,7 @@ async fn handle_connection(
     client_senders: &ClientSenders,
     stream_waiters: &StreamWaiters,
     shutdown: Arc<AtomicBool>,
+    heartbeat_timeout: u64,
 ) -> rystra_model::Result<()> {
     let (reader, writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -91,7 +95,7 @@ async fn handle_connection(
 
     match first_msg {
         Message::Hello(hello) => {
-            handle_control(reader, writer, hello, auth, proxy_manager, client_senders, stream_waiters, shutdown).await
+            handle_control(reader, writer, hello, auth, proxy_manager, client_senders, stream_waiters, shutdown, heartbeat_timeout).await
         }
         Message::StreamReady(ready) => {
             info!(stream_id = ready.stream_id, "data stream ready");
@@ -117,6 +121,7 @@ async fn handle_control(
     client_senders: &ClientSenders,
     stream_waiters: &StreamWaiters,
     shutdown: Arc<AtomicBool>,
+    heartbeat_timeout: u64,
 ) -> rystra_model::Result<()> {
     let writer = Arc::new(Mutex::new(writer));
     let mut conn = ControlConnection::new();
@@ -144,14 +149,22 @@ async fn handle_control(
         }
     });
 
+    let mut last_heartbeat = Instant::now();
+    let timeout_duration = std::time::Duration::from_secs(heartbeat_timeout);
+
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
 
+        if conn.is_ready() && last_heartbeat.elapsed() > timeout_duration {
+            warn!(conn_id = conn.id, "heartbeat timeout");
+            break;
+        }
+
         let read = tokio::select! {
             r = read_message(&mut reader) => Some(r),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => None,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => None,
         };
 
         let msg = match read {
@@ -175,6 +188,7 @@ async fn handle_control(
 
                 if success {
                     conn.transition_to(ConnectionState::Ready);
+                    last_heartbeat = Instant::now();
                     info!(conn_id = conn.id, "authenticated");
                 } else {
                     warn!(conn_id = conn.id, "auth failed");
@@ -184,6 +198,7 @@ async fn handle_control(
 
             Message::RegisterProxy(reg) => {
                 if !conn.is_ready() { continue; }
+                last_heartbeat = Instant::now();
                 let client_id = conn.client_id.clone().unwrap_or_default();
                 let entry = ProxyEntry {
                     name: reg.name.clone(),
@@ -219,6 +234,7 @@ async fn handle_control(
             }
 
             Message::Heartbeat => {
+                last_heartbeat = Instant::now();
                 let mut w = writer.lock().await;
                 write_message(&mut *w, &Message::Heartbeat).await?;
             }

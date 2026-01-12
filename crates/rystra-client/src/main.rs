@@ -5,6 +5,7 @@ use rystra_proto::{AuthRequest, Hello, Message, RegisterProxy, StreamReady, PROT
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::signal;
@@ -104,16 +105,22 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
 
     info!("entering main loop");
 
+    let last_heartbeat_resp = Arc::new(Mutex::new(Instant::now()));
+    let heartbeat_timeout = std::time::Duration::from_secs(config.heartbeat_timeout);
+    let heartbeat_interval = config.heartbeat_interval;
+
     let writer_hb = writer.clone();
     let shutdown_hb = shutdown.clone();
+    let _last_hb = last_heartbeat_resp.clone();
     tokio::spawn(async move {
         while !shutdown_hb.load(Ordering::SeqCst) {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(heartbeat_interval)).await;
             if shutdown_hb.load(Ordering::SeqCst) { break; }
             let mut w = writer_hb.lock().await;
             if write_message(&mut *w, &Message::Heartbeat).await.is_err() {
                 break;
             }
+            info!("sent Heartbeat");
         }
     });
 
@@ -122,9 +129,14 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
             break;
         }
 
+        if last_heartbeat_resp.lock().await.elapsed() > heartbeat_timeout {
+            warn!("heartbeat response timeout");
+            return Err(rystra_model::Error::protocol("heartbeat timeout"));
+        }
+
         let read = tokio::select! {
             r = read_message(&mut reader) => Some(r),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => None,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => None,
         };
 
         let msg = match read {
@@ -151,7 +163,9 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
                     warn!(proxy = %open.proxy_name, "unknown proxy");
                 }
             }
-            Message::Heartbeat => {}
+            Message::Heartbeat => {
+                *last_heartbeat_resp.lock().await = Instant::now();
+            }
             _ => {}
         }
     }

@@ -1,14 +1,6 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! rystra-proxy-tcp: TCP 代理插件
+//!
+//! 当前 TCP 代理逻辑已直接实现在 rystra-server 和 rystra-client 中。
+//! 后续可抽象到此插件模块。
+//!
+//! 当前状态：占位，待重构

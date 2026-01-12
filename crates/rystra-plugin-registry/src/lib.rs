@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! rystra-plugin-registry: 插件注册与装配模块
+//!
+//! 规划功能：
+//! - 插件注册表
+//! - 插件工厂
+//! - 编译期插件装配
+//!
+//! 当前状态：占位，待实现
