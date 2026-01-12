@@ -1,5 +1,5 @@
-mod config;
 mod validate;
+mod config;
 
 pub use config::{ClientConfig, ServerConfig};
 

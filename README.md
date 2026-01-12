@@ -42,14 +42,13 @@ rystra/
 ├── Cargo.toml
 ├── crates/
 │  ├── rystra-model/                # 基础数据结构、ID、错误码（最底层）
-│  ├── rystra-settings/             # 负责“配置结构体 + 校验 + 语义化类型”
 │  ├── rystra-proto/                # 控制面协议定义（版本化）
 │  ├── rystra-plugin/               # 插件 trait 定义（Proxy / Transport / Auth / Hook / Mux）
 │  ├── rystra-plugin-registry/      # 插件注册与装配
 │  ├── rystra-core/                 # 核心状态机、ProxyManager、RuntimeController
 │  ├── rystra-net/                  # 网络工具（io copy、framing、连接ID）
 │  ├── rystra-runtime/              # 运行时抽象（任务管理、超时、重连）
-│  ├── rystra-config/               # 配置加载、校验、snapshot
+│  ├── rystra-config/               # 配置加载、校验、snapshot 配置结构体 + 校验 + 语义化类型
 │  ├── rystra-observe/              # tracing / metrics 统一封装
 │  ├── rystra-server/               # Server 二进制
 │  ├── rystra-client/               # Client 二进制

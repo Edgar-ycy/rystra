@@ -2,6 +2,7 @@
 name = "rystra-config"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 rystra-model = { path = "../rystra-model" }
