@@ -5,3 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rystra-model = { path = "../rystra-model" }
+tokio.workspace = true
+async-trait.workspace = true

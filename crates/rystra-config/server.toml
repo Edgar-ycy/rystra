@@ -1,9 +1,11 @@
 bind_addr = "0.0.0.0"
 bind_port = 8000
-max_connections= 10
+data_port = 8001
+max_connections = 10
+log_level = "info"
 
 [web_server]
-addr= "127.0.0.1"
-port= 8600
-user= "admin"
+addr = "127.0.0.1"
+port = 8600
+user = "admin"
 password = "admin"

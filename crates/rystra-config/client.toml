@@ -1,21 +1,17 @@
-server_addr= "192.168.8.102"
-server_bind_port= 8000
+server_addr = "127.0.0.1"
+server_bind_port = 8000
+server_data_port = 8001
+log_level = "info"
 
 [[proxies]]
-name= "test-tcp"
-kind= "tcp"
-local_ip= "127.0.0.1"
-local_port= 18880
-remote_port=28880
-[[proxies]]
-name= "test-tcp2"
-kind= "tcp"
-local_ip= "127.0.0.1"
-local_port= 18880
-remote_port=28880
+name = "test-tcp"
+kind = "tcp"
+local_ip = "127.0.0.1"
+local_port = 18880
+remote_port = 28880
 
 [web_server]
-addr= "127.0.0.1"
-port= 8000
-user= "admin"
+addr = "127.0.0.1"
+port = 8000
+user = "admin"
 password = "admin"

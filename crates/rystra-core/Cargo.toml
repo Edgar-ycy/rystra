@@ -5,3 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rystra-model = { path = "../rystra-model" }
+rystra-proto = { path = "../rystra-proto" }
+rystra-plugin = { path = "../rystra-plugin" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true

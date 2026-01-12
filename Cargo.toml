@@ -26,4 +26,9 @@ rust-version = "1.92.0"
 [workspace.dependencies]
 
 serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.145"
 toml = "0.9.8"
+tokio = {version = "1.48.0",features = ["full"]}
+async-trait = "0.1.89"
+tracing = "0.1.44"
+tracing-subscriber = {version = "0.3.22",features = ["env-filter"]}
