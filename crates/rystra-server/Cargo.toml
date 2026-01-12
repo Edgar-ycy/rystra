@@ -12,4 +12,6 @@ rystra-core = { path = "../rystra-core" }
 rystra-plugin = { path = "../rystra-plugin" }
 rystra-observe = { path = "../rystra-observe" }
 rystra-auth-token = { path = "../plugins/auth/rystra-auth-token" }
+rystra-transport-tcp = { path = "../plugins/transport/rystra-transport-tcp" }
+rystra-transport-tls = { path = "../plugins/transport/rystra-transport-tls" }
 tokio.workspace = true

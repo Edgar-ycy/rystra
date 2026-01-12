@@ -9,6 +9,9 @@ rystra-config = { path = "../rystra-config" }
 rystra-model = { path = "../rystra-model" }
 rystra-proto = { path = "../rystra-proto" }
 rystra-core = { path = "../rystra-core" }
+rystra-plugin = { path = "../rystra-plugin" }
 rystra-observe = { path = "../rystra-observe" }
+rystra-transport-tcp = { path = "../plugins/transport/rystra-transport-tcp" }
+rystra-transport-tls = { path = "../plugins/transport/rystra-transport-tls" }
 tokio.workspace = true
 serde_json.workspace = true

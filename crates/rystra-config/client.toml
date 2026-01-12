@@ -1,6 +1,8 @@
 server_addr = "127.0.0.1"
 server_port = 8000
 log_level = "info"
+heartbeat_interval = 30
+heartbeat_timeout = 60
 
 [[proxies]]
 name = "test-tcp"

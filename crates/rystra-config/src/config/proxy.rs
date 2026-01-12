@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::config::transport_kind::TransportKind;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proxy {

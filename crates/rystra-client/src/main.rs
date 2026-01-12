@@ -1,4 +1,4 @@
-use rystra_config::ClientConfig;
+use rystra_config::{ClientConfig, TransportKind};
 use rystra_core::{read_message, write_message};
 use rystra_observe::{error, info, warn};
 use rystra_proto::{AuthRequest, Hello, Message, RegisterProxy, StreamReady, PROTOCOL_VERSION};
@@ -85,7 +85,7 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
         info!("authenticated");
     }
 
-    let mut proxy_map: HashMap<String, (String, u16)> = HashMap::new();
+    let proxy_map: Arc<Mutex<HashMap<String, (String, u16, TransportKind)>>> = Arc::new(Mutex::new(HashMap::new()));
     for p in &config.proxies {
         let reg = Message::RegisterProxy(RegisterProxy {
             name: p.name.clone(),
@@ -97,7 +97,7 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
             let mut w = writer.lock().await;
             write_message(&mut *w, &reg).await?;
         }
-        proxy_map.insert(p.name.clone(), (p.local_ip.clone(), p.local_port));
+        proxy_map.lock().await.insert(p.name.clone(), (p.local_ip.clone(), p.local_port, p.kind.clone()));
 
         let resp = read_message(&mut reader).await?;
         info!(?resp, "proxy registered");
@@ -111,7 +111,6 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
 
     let writer_hb = writer.clone();
     let shutdown_hb = shutdown.clone();
-    let _last_hb = last_heartbeat_resp.clone();
     tokio::spawn(async move {
         while !shutdown_hb.load(Ordering::SeqCst) {
             tokio::time::sleep(std::time::Duration::from_secs(heartbeat_interval)).await;
@@ -124,6 +123,7 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
         }
     });
 
+    let proxy_map_clone = proxy_map.clone();
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
@@ -149,13 +149,18 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
             Message::OpenStream(open) => {
                 info!(proxy = %open.proxy_name, stream_id = open.stream_id, "open stream");
 
-                if let Some((local_ip, local_port)) = proxy_map.get(&open.proxy_name) {
+                let transport_info = {
+                    let map = proxy_map_clone.lock().await;
+                    map.get(&open.proxy_name).cloned()
+                };
+
+                if let Some((local_ip, local_port, transport_kind)) = transport_info {
                     let local_target = format!("{}:{}", local_ip, local_port);
                     let server_addr = format!("{}:{}", config.server_addr, config.server_port);
                     let stream_id = open.stream_id;
 
                     tokio::spawn(async move {
-                        if let Err(e) = handle_stream(stream_id, &server_addr, &local_target).await {
+                        if let Err(e) = handle_stream(stream_id, &server_addr, &local_target, transport_kind).await {
                             error!(stream_id = stream_id, error = %e, "stream error");
                         }
                     });
@@ -173,8 +178,17 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
     Ok(())
 }
 
-async fn handle_stream(stream_id: u64, server_addr: &str, local_target: &str) -> rystra_model::Result<()> {
-    let local = TcpStream::connect(local_target).await?;
+async fn handle_stream(stream_id: u64, server_addr: &str, local_target: &str, transport_kind: TransportKind) -> rystra_model::Result<()> {
+    let local = match transport_kind {
+        TransportKind::Tcp => {
+            tokio::net::TcpStream::connect(local_target).await?
+        }
+        TransportKind::Tls => {
+            // 简化实现，暂时仍用 TCP
+            tokio::net::TcpStream::connect(local_target).await?
+        }
+    };
+
     let mut server = TcpStream::connect(server_addr).await?;
 
     let ready = Message::StreamReady(StreamReady { stream_id });
