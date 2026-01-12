@@ -1,6 +1,5 @@
 bind_addr = "0.0.0.0"
 bind_port = 8000
-data_port = 8001
 max_connections = 10
 log_level = "info"
 

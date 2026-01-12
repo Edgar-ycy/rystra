@@ -11,8 +11,6 @@ pub struct ServerConfig {
     pub bind_addr: String,
     #[serde(default = "default_bind_port")]
     pub bind_port: u16,
-    #[serde(default = "default_data_port")]
-    pub data_port: u16,
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
     #[serde(default = "default_log_level")]
@@ -26,9 +24,6 @@ fn default_bind_addr() -> String {
 }
 fn default_bind_port() -> u16 {
     8000
-}
-fn default_data_port() -> u16 {
-    8001
 }
 fn default_max_connections() -> usize {
     10

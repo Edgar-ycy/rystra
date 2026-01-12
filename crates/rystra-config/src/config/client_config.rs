@@ -9,27 +9,22 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientConfig {
     pub server_addr: String,
-    pub server_bind_port: u16,
-    #[serde(default = "default_data_port")]
-    pub server_data_port: u16,
+    pub server_port: u16,
     #[serde(default = "default_proxies")]
     pub proxies: Vec<Proxy>,
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    #[serde(default = "default_web_server_1")]
+    #[serde(default = "default_web_server")]
     pub web_server: WebServerConfig,
 }
 
 fn default_proxies() -> Vec<Proxy> {
     vec![]
 }
-fn default_data_port() -> u16 {
-    8001
-}
 fn default_log_level() -> String {
     "info".to_string()
 }
-fn default_web_server_1() -> WebServerConfig {
+fn default_web_server() -> WebServerConfig {
     WebServerConfig {
         addr: "127.0.0.1".to_string(),
         port: 8600,
@@ -40,8 +35,8 @@ fn default_web_server_1() -> WebServerConfig {
 
 impl ConfigValidation for ClientConfig {
     fn validate(&self) -> rystra_model::Result<()> {
-        if self.server_bind_port == 0 {
-            return Err(Error::config("server_bind_port cannot be 0"));
+        if self.server_port == 0 {
+            return Err(Error::config("server_port cannot be 0"));
         }
         Ok(())
     }
