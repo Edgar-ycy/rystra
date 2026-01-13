@@ -15,3 +15,8 @@ rystra-auth-token = { path = "../plugins/auth/rystra-auth-token" }
 rystra-transport-tcp = { path = "../plugins/transport/rystra-transport-tcp" }
 rystra-transport-tls = { path = "../plugins/transport/rystra-transport-tls" }
 tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hyper.workspace = true
+http-body-util.workspace = true
+hyper-util.workspace = true

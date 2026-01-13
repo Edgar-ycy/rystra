@@ -12,7 +12,13 @@ use tokio::io::BufReader;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::signal;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, body::Incoming, StatusCode};
+use http_body_util::Full;
+use hyper::body::Bytes;
+use hyper_util::rt::TokioIo;
 
 static STREAM_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -26,6 +32,9 @@ async fn main() {
     info!("rystra-server starting...");
     info!(?config, "config loaded");
 
+    // 将配置放入 Arc<RwLock> 以支持运行时重新加载
+    let config = Arc::new(RwLock::new(config));
+
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();
 
@@ -38,16 +47,36 @@ async fn main() {
         shutdown_clone.store(true, Ordering::SeqCst);
     });
 
+    // 启动 HTTP 管理服务器
+    let config_clone = config.clone();
+    let shutdown_web = shutdown.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_web_server(config_clone, shutdown_web).await {
+            error!(error = %e, "web server error");
+        }
+    });
+
     let auth = TokenAuthPlugin::with_tokens(vec!["secret-token".to_string()]);
     let proxy_manager = Arc::new(ProxyManager::new());
     let client_senders: ClientSenders = Arc::new(Mutex::new(HashMap::new()));
     let stream_waiters: StreamWaiters = Arc::new(Mutex::new(HashMap::new()));
 
-    let addr = format!("{}:{}", config.bind_addr, config.bind_port);
+    let bind_addr = {
+        let cfg = config.read().await;
+        cfg.bind_addr.clone()
+    };
+    let bind_port = {
+        let cfg = config.read().await;
+        cfg.bind_port
+    };
+    let heartbeat_timeout = {
+        let cfg = config.read().await;
+        cfg.heartbeat_timeout
+    };
+
+    let addr = format!("{}:{}", bind_addr, bind_port);
     let listener = TcpListener::bind(&addr).await.unwrap();
     info!(addr = %addr, "listening");
-
-    let heartbeat_timeout = config.heartbeat_timeout;
 
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -249,6 +278,213 @@ async fn handle_control(
     }
     info!(conn_id = conn.id, "control connection closed");
     Ok(())
+}
+
+/// HTTP 管理服务器，处理 /reload 请求
+async fn run_web_server(
+    config: Arc<RwLock<ServerConfig>>,
+    shutdown: Arc<AtomicBool>,
+) -> rystra_model::Result<()> {
+    let (addr, port, user, password) = {
+        let cfg = config.read().await;
+        (
+            cfg.web_server.addr.clone(),
+            cfg.web_server.port,
+            cfg.web_server.user.clone(),
+            cfg.web_server.password.clone(),
+        )
+    };
+
+    let bind_addr = format!("{}:{}", addr, port);
+    let listener = TcpListener::bind(&bind_addr).await?;
+    info!(addr = %bind_addr, "web management server listening");
+
+    loop {
+        if shutdown.load(Ordering::SeqCst) {
+            break;
+        }
+
+        let accept = tokio::select! {
+            r = listener.accept() => Some(r),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => None,
+        };
+
+        if let Some(Ok((stream, _))) = accept {
+            let config_clone = config.clone();
+            let user_clone = user.clone();
+            let password_clone = password.clone();
+
+            tokio::spawn(async move {
+                let io = TokioIo::new(stream);
+                let service = service_fn(move |req| {
+                    handle_web_request(
+                        req,
+                        config_clone.clone(),
+                        user_clone.clone(),
+                        password_clone.clone(),
+                    )
+                });
+
+                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+                    error!(error = %e, "http connection error");
+                }
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// 处理 HTTP 请求
+async fn handle_web_request(
+    req: Request<Incoming>,
+    config: Arc<RwLock<ServerConfig>>,
+    expected_user: String,
+    expected_password: String,
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    let path = req.uri().path();
+
+    // 简单的基本认证检查
+    if let Some(auth_header) = req.headers().get("authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if let Some(basic) = auth_str.strip_prefix("Basic ") {
+                if let Ok(decoded) = base64_decode(basic) {
+                    let parts: Vec<&str> = decoded.split(':').collect();
+                    if parts.len() == 2 && parts[0] == expected_user && parts[1] == expected_password {
+                        // 认证成功，处理请求
+                        return handle_authenticated_request(path, config).await;
+                    }
+                }
+            }
+        }
+    }
+
+    // 认证失败
+    let response = Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header("WWW-Authenticate", "Basic realm=\"Rystra Management\"")
+        .body(Full::new(Bytes::from("Unauthorized")))
+        .unwrap();
+    Ok(response)
+}
+
+/// 处理已认证的请求
+async fn handle_authenticated_request(
+    path: &str,
+    config: Arc<RwLock<ServerConfig>>,
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    match path {
+        "/reload" => {
+            info!("received reload request");
+            
+            // 重新加载配置文件
+            match ServerConfig::load_from_file("./crates/rystra-config/server.toml") {
+                Ok(new_config) => {
+                    let mut cfg = config.write().await;
+                    *cfg = new_config;
+                    info!("configuration reloaded successfully");
+                    
+                    let response = Response::builder()
+                        .status(StatusCode::OK)
+                        .body(Full::new(Bytes::from(
+                            serde_json::json!({
+                                "status": "success",
+                                "message": "Configuration reloaded successfully"
+                            })
+                            .to_string(),
+                        )))
+                        .unwrap();
+                    Ok(response)
+                }
+                Err(e) => {
+                    error!(error = %e, "failed to reload configuration");
+                    let response = Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Full::new(Bytes::from(
+                            serde_json::json!({
+                                "status": "error",
+                                "message": format!("Failed to reload: {}", e)
+                            })
+                            .to_string(),
+                        )))
+                        .unwrap();
+                    Ok(response)
+                }
+            }
+        }
+        "/health" => {
+            // 健康检查端点
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .body(Full::new(Bytes::from(
+                    serde_json::json!({
+                        "status": "ok"
+                    })
+                    .to_string(),
+                )))
+                .unwrap();
+            Ok(response)
+        }
+        _ => {
+            let response = Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Full::new(Bytes::from("Not Found")))
+                .unwrap();
+            Ok(response)
+        }
+    }
+}
+
+/// 简单的 Base64 解码
+fn base64_decode(input: &str) -> Result<String, ()> {
+    use std::str;
+    
+    // 简单实现，实际生产应使用 base64 crate
+    let bytes = match base64_decode_bytes(input) {
+        Ok(b) => b,
+        Err(_) => return Err(()),
+    };
+    
+    match str::from_utf8(&bytes) {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => Err(()),
+    }
+}
+
+fn base64_decode_bytes(input: &str) -> Result<Vec<u8>, ()> {
+    // 使用标准库的简单实现
+    let table: Vec<u8> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        .bytes()
+        .collect();
+    
+    let mut result = Vec::new();
+    let chars: Vec<char> = input.chars().filter(|c| !c.is_whitespace()).collect();
+    
+    let mut i = 0;
+    while i < chars.len() {
+        let mut buf = [0u8; 4];
+        for j in 0..4 {
+            if i + j < chars.len() && chars[i + j] != '=' {
+                if let Some(pos) = table.iter().position(|&x| x == chars[i + j] as u8) {
+                    buf[j] = pos as u8;
+                } else {
+                    return Err(());
+                }
+            }
+        }
+        
+        result.push((buf[0] << 2) | (buf[1] >> 4));
+        if i + 2 < chars.len() && chars[i + 2] != '=' {
+            result.push((buf[1] << 4) | (buf[2] >> 2));
+        }
+        if i + 3 < chars.len() && chars[i + 3] != '=' {
+            result.push((buf[2] << 6) | buf[3]);
+        }
+        
+        i += 4;
+    }
+    
+    Ok(result)
 }
 
 async fn run_proxy_listener(

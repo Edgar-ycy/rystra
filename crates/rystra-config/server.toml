@@ -1,7 +1,7 @@
 bind_addr = "0.0.0.0"
 bind_port = 8000
 max_connections = 10
-log_level = "info"
+log_level = "debug"
 heartbeat_timeout = 90
 
 [web_server]

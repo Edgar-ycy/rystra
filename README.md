@@ -6,9 +6,10 @@ Rystra 是一个使用 **Rust** 编写的、**自主可控、强工程化、可�
 
 当前阶段重点目标：  
 👉 **TCP 反向代理 MVP 已完成**  
-👉 **进入稳定性与运维优化阶段**
+👉 **稳定性与运维优化已完成**  
+👉 **开始扩展能力阶段（TLS 支持）**
 
-> 当前状态：✅ Phase 1 完成 / Phase 2 进行中
+> 当前状态：✅ Phase 1 完成 / ✅ Phase 2 完成 / 🚧 Phase 3 进行中
 
 ---
 
@@ -129,18 +130,19 @@ rystra/
 - [x] Server ↔ Client TCP 反向代理闭环
 - [x] 单端口复用（控制连接 + 数据连接）
 
-### Phase 2：稳定性与运维 🚧
+### Phase 2：稳定性与运维 ✅
 
-- [ ] 运行期 reload（restart 命令）
+- [x] 运行期 reload（HTTP 管理接口）
 - [x] graceful shutdown（Ctrl+C 信号处理）
 - [x] tracing 日志系统
 - [x] 配置文件控制日志级别
 - [x] 客户端自动重连（指数退避）
 - [x] 心跳超时检测
 
-### Phase 3：扩展能力
+### Phase 3：扩展能力 🚧
 
-- [ ] TLS / QUIC
+- [ ] TLS Transport（进行中）
+- [ ] QUIC Transport
 - [ ] 多路复用（Mux）
 - [ ] UDP / HTTP Proxy
 - [ ] Hook 插件链
@@ -162,8 +164,9 @@ rystra/
 ## 🚧 当前状态
 
 - ✅ Phase 1 完成：TCP 反向代理 MVP 可用
-- 🚧 Phase 2 进行中：稳定性与运维优化
-- Server 和 Client 可正常运行，支持 TCP 代理转发
+- ✅ Phase 2 完成：稳定性与运维优化（含配置热重载）
+- 🚧 Phase 3 进行中：扩展能力（TLS Transport）
+- Server 和 Client 可正常运行，支持 TCP 代理转发和运行期配置重载
 
 ---
 
