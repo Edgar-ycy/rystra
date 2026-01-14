@@ -1,6 +1,7 @@
 use crate::ConfigValidation;
 use crate::config::Proxy;
 use crate::config::WebServerConfig;
+use crate::config::tls_config::TlsClientConfig;
 use rystra_model::Error;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -20,6 +21,8 @@ pub struct ClientConfig {
     pub heartbeat_timeout: u64,
     #[serde(default = "default_web_server")]
     pub web_server: WebServerConfig,
+    #[serde(default = "default_tls")]
+    pub tls: TlsClientConfig,
 }
 
 fn default_proxies() -> Vec<Proxy> {
@@ -40,6 +43,13 @@ fn default_web_server() -> WebServerConfig {
         port: 8600,
         user: "admin".to_string(),
         password: "admin".to_string(),
+    }
+}
+fn default_tls() -> TlsClientConfig {
+    TlsClientConfig {
+        enabled: false,
+        ca_cert_path: "./certificates/ca-cert.pem".to_string(),
+        insecure_skip_verify: false,
     }
 }
 

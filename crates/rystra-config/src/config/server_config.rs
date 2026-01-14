@@ -1,5 +1,6 @@
 use crate::ConfigValidation;
 use crate::config::web_server_config::WebServerConfig;
+use crate::config::tls_config::TlsConfig;
 use rystra_model::Error;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -19,6 +20,8 @@ pub struct ServerConfig {
     pub heartbeat_timeout: u64,
     #[serde(default = "default_web_server")]
     pub web_server: WebServerConfig,
+    #[serde(default = "default_tls")]
+    pub tls: TlsConfig,
 }
 
 fn default_bind_addr() -> String {
@@ -42,6 +45,13 @@ fn default_web_server() -> WebServerConfig {
         port: 8800,
         user: "admin".to_string(),
         password: "admin".to_string(),
+    }
+}
+fn default_tls() -> TlsConfig {
+    TlsConfig {
+        enabled: false,
+        cert_path: "./certificates/server-cert.pem".to_string(),
+        key_path: "./certificates/server-key.pem".to_string(),
     }
 }
 

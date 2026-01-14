@@ -1,0 +1,10 @@
+cd D:\project\rustProject\rystra\certificates
+
+# 删除所有旧证书
+Remove-Item *.pem, *.srl -ErrorAction SilentlyContinue
+
+# 1. 生成 CA 证书（X.509 v3，带 CA 扩展）
+openssl req -x509 -newkey rsa:4096 -nodes -keyout ca-key.pem -out ca-cert.pem -days 3650 -subj "/CN=Rystra CA" -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# 2. 生成 Server 证书（X.509 v3，带正确扩展）
+openssl req -x509 -newkey rsa:2048 -nodes -keyout server-key.pem -out server-cert.pem -days 365 -subj "/CN=localhost" -addext "basicConstraints=CA:FALSE" -addext "keyUsage=digitalSignature,keyEncipherment" -addext "extendedKeyUsage=serverAuth" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"

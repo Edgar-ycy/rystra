@@ -1,7 +1,7 @@
 bind_addr = "0.0.0.0"
 bind_port = 8000
 max_connections = 10
-log_level = "debug"
+log_level = "info"
 heartbeat_timeout = 90
 
 [web_server]
@@ -9,3 +9,8 @@ addr = "127.0.0.1"
 port = 8600
 user = "admin"
 password = "admin"
+
+[tls]
+enabled = true
+cert_path = "./certificates/server-cert.pem"
+key_path = "./certificates/server-key.pem"

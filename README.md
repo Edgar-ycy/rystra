@@ -7,9 +7,9 @@ Rystra 是一个使用 **Rust** 编写的、**自主可控、强工程化、可�
 当前阶段重点目标：  
 👉 **TCP 反向代理 MVP 已完成**  
 👉 **稳定性与运维优化已完成**  
-👉 **开始扩展能力阶段（TLS 支持）**
+👉 **TLS Transport 已完成**
 
-> 当前状态：✅ Phase 1 完成 / ✅ Phase 2 完成 / 🚧 Phase 3 进行中
+> 当前状态：✅ Phase 1 完成 / ✅ Phase 2 完成 / 🚧 Phase 3 进行中（TLS ✅）
 
 ---
 
@@ -62,7 +62,7 @@ rystra/
 │     │  └── rystra-proxy-udp/      # 规划
 │     ├── transport/
 │     │  ├── rystra-transport-tcp/  # ✅ MVP
-│     │  ├── rystra-transport-tls/  # 规划
+│     │  ├── rystra-transport-tls/  # ✅ 已完成
 │     │  └── rystra-transport-quic/ # 规划
 │     ├── auth/
 │     │  ├── rystra-auth-token/     # ✅ MVP
@@ -99,7 +99,7 @@ rystra/
 ### 插件类型
 
 - **Proxy Plugin**：tcp（MVP）、udp/http（规划）
-- **Transport Plugin**：tcp（MVP）、tls/quic（规划）
+- **Transport Plugin**：tcp（MVP）、tls（✅ 已完成）、quic（规划）
 - **Auth Plugin**：token（MVP）、mTLS（规划）
 - **Hook Plugin**：限速、审计、改写（规划）
 - **Mux Plugin**：多路复用（规划）
@@ -141,7 +141,7 @@ rystra/
 
 ### Phase 3：扩展能力 🚧
 
-- [ ] TLS Transport（进行中）
+- [x] TLS Transport（✅ 已完成）
 - [ ] QUIC Transport
 - [ ] 多路复用（Mux）
 - [ ] UDP / HTTP Proxy
@@ -156,7 +156,7 @@ rystra/
 - tokio
 - serde
 - tracing
-- rustls（规划）
+- tokio-rustls（✅ TLS 支持）
 - quinn（规划）
 
 ---
@@ -165,8 +165,10 @@ rystra/
 
 - ✅ Phase 1 完成：TCP 反向代理 MVP 可用
 - ✅ Phase 2 完成：稳定性与运维优化（含配置热重载）
-- 🚧 Phase 3 进行中：扩展能力（TLS Transport）
-- Server 和 Client 可正常运行，支持 TCP 代理转发和运行期配置重载
+- 🚧 Phase 3 进行中：扩展能力
+  - ✅ TLS Transport 已完成
+  - 待开发：QUIC、Mux、UDP/HTTP Proxy
+- Server 和 Client 支持 TCP/TLS 代理转发、配置热重载、心跳检测
 
 ---
 

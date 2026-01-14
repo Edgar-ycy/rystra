@@ -1,15 +1,21 @@
 use rystra_config::{ClientConfig, TransportKind};
 use rystra_core::{read_message, write_message};
 use rystra_observe::{error, info, warn};
+use rystra_plugin::{TransportPlugin, TransportStream};
 use rystra_proto::{AuthRequest, Hello, Message, RegisterProxy, StreamReady, PROTOCOL_VERSION};
+use rystra_transport_tcp::TcpTransportPlugin;
+use rystra_transport_tls::TlsTransportPlugin;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::signal;
 use tokio::sync::Mutex;
+
+type DynTransportPlugin = Arc<dyn TransportPlugin>;
+type DynWriter = WriteHalf<Box<dyn TransportStream>>;
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +23,48 @@ async fn main() {
     rystra_observe::init_with_level(&config.log_level);
     info!("rystra-client starting...");
     info!(?config, "config loaded");
+
+    // 根据配置创建 Transport 插件
+    let transport: DynTransportPlugin = if config.tls.enabled {
+        info!("TLS enabled");
+        if config.tls.insecure_skip_verify {
+            info!("TLS insecure mode (skip certificate verification)");
+            match TlsTransportPlugin::new_client_insecure() {
+                Ok(tls) => {
+                    info!("TLS transport initialized (insecure mode)");
+                    Arc::new(tls)
+                }
+                Err(e) => {
+                    error!(error = %e, "failed to initialize TLS, falling back to TCP");
+                    Arc::new(TcpTransportPlugin::new())
+                }
+            }
+        } else {
+            info!("TLS secure mode, loading CA certificate...");
+            info!(ca_cert_path = %config.tls.ca_cert_path, "CA certificate path");
+            
+            // 检查 CA 证书文件是否存在
+            if !std::path::Path::new(&config.tls.ca_cert_path).exists() {
+                error!(path = %config.tls.ca_cert_path, "CA certificate file not found");
+                error!("falling back to TCP");
+                Arc::new(TcpTransportPlugin::new())
+            } else {
+                match TlsTransportPlugin::new_client(&config.tls.ca_cert_path) {
+                    Ok(tls) => {
+                        info!("TLS transport initialized successfully");
+                        Arc::new(tls)
+                    }
+                    Err(e) => {
+                        error!(error = %e, "failed to initialize TLS, falling back to TCP");
+                        Arc::new(TcpTransportPlugin::new())
+                    }
+                }
+            }
+        }
+    } else {
+        info!("TLS disabled, using TCP transport");
+        Arc::new(TcpTransportPlugin::new())
+    };
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();
@@ -30,7 +78,7 @@ async fn main() {
     let mut retry = 0u32;
 
     while !shutdown.load(Ordering::SeqCst) {
-        match run(&config, shutdown.clone()).await {
+        match run(&config, shutdown.clone(), transport.clone()).await {
             Ok(_) => retry = 0,
             Err(e) => {
                 error!(error = %e, "client error");
@@ -49,14 +97,15 @@ async fn main() {
     info!("client stopped");
 }
 
-async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::Result<()> {
+async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTransportPlugin) -> rystra_model::Result<()> {
     let server_addr = format!("{}:{}", config.server_addr, config.server_port);
-    info!(addr = %server_addr, "connecting");
+    info!(addr = %server_addr, transport = %transport.name(), "connecting");
 
-    let stream = TcpStream::connect(&server_addr).await?;
-    let (reader, writer) = stream.into_split();
+    // 使用 Transport 插件连接服务器
+    let stream = transport.connect(&server_addr).await?;
+    let (reader, writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
-    let writer = Arc::new(Mutex::new(writer));
+    let writer: Arc<Mutex<DynWriter>> = Arc::new(Mutex::new(writer));
 
     {
         let mut w = writer.lock().await;
@@ -158,9 +207,10 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
                     let local_target = format!("{}:{}", local_ip, local_port);
                     let server_addr = format!("{}:{}", config.server_addr, config.server_port);
                     let stream_id = open.stream_id;
+                    let transport_clone = transport.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) = handle_stream(stream_id, &server_addr, &local_target, transport_kind).await {
+                        if let Err(e) = handle_stream(stream_id, &server_addr, &local_target, transport_kind, transport_clone).await {
                             error!(stream_id = stream_id, error = %e, "stream error");
                         }
                     });
@@ -178,18 +228,26 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>) -> rystra_model::
     Ok(())
 }
 
-async fn handle_stream(stream_id: u64, server_addr: &str, local_target: &str, transport_kind: TransportKind) -> rystra_model::Result<()> {
+async fn handle_stream(
+    stream_id: u64,
+    server_addr: &str,
+    local_target: &str,
+    transport_kind: TransportKind,
+    transport: DynTransportPlugin,
+) -> rystra_model::Result<()> {
+    // 连接本地服务（始终使用 TCP）
     let local = match transport_kind {
         TransportKind::Tcp => {
             tokio::net::TcpStream::connect(local_target).await?
         }
         TransportKind::Tls => {
-            // 简化实现，暂时仍用 TCP
+            // 本地连接仍用 TCP
             tokio::net::TcpStream::connect(local_target).await?
         }
     };
 
-    let mut server = TcpStream::connect(server_addr).await?;
+    // 使用 Transport 插件连接 Server（支持 TCP/TLS）
+    let mut server = transport.connect(server_addr).await?;
 
     let ready = Message::StreamReady(StreamReady { stream_id });
     let json = serde_json::to_string(&ready).unwrap();
@@ -199,8 +257,9 @@ async fn handle_stream(stream_id: u64, server_addr: &str, local_target: &str, tr
 
     info!(stream_id = stream_id, "relay started");
 
-    let (mut sr, mut sw) = server.into_split();
-    let (mut lr, mut lw) = local.into_split();
+    // 使用 tokio::io::split 支持任意 AsyncRead + AsyncWrite
+    let (mut sr, mut sw) = tokio::io::split(server);
+    let (mut lr, mut lw) = tokio::io::split(local);
 
     let _ = tokio::try_join!(
         tokio::io::copy(&mut sr, &mut lw),

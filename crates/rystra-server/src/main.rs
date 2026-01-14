@@ -2,15 +2,16 @@ use rystra_auth_token::TokenAuthPlugin;
 use rystra_config::ServerConfig;
 use rystra_core::{read_message, write_message, ConnectionState, ControlConnection, ProxyEntry, ProxyManager};
 use rystra_observe::{error, info, warn};
-use rystra_plugin::AuthPlugin;
+use rystra_plugin::{AuthPlugin, TransportPlugin, TransportListener, TransportStream};
 use rystra_proto::{AuthResponse, Message, OpenStream, RegisterProxyResponse, PROTOCOL_VERSION};
+use rystra_transport_tcp::TcpTransportPlugin;
+use rystra_transport_tls::TlsTransportPlugin;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::BufReader;
+use tokio::io::{BufReader, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::signal;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use hyper::server::conn::http1;
@@ -23,7 +24,62 @@ use hyper_util::rt::TokioIo;
 static STREAM_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 type ClientSenders = Arc<Mutex<HashMap<String, mpsc::Sender<Message>>>>;
-type StreamWaiters = Arc<Mutex<HashMap<u64, oneshot::Sender<TcpStream>>>>;
+type StreamWaiters = Arc<Mutex<HashMap<u64, oneshot::Sender<Box<dyn TransportStream>>>>>;
+type DynTransportPlugin = Arc<dyn TransportPlugin>;
+type DynReader = ReadHalf<Box<dyn TransportStream>>;
+type DynWriter = WriteHalf<Box<dyn TransportStream>>;
+
+/// 将读写半部重新组合为一个完整的 TransportStream
+struct ReunitedStream {
+    reader: DynReader,
+    writer: DynWriter,
+}
+
+impl ReunitedStream {
+    fn new(reader: DynReader, writer: DynWriter) -> Self {
+        Self { reader, writer }
+    }
+}
+
+impl AsyncRead for ReunitedStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ReunitedStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+impl TransportStream for ReunitedStream {}
+
+fn reunite_stream(reader: DynReader, writer: DynWriter) -> Box<dyn TransportStream> {
+    Box::new(ReunitedStream::new(reader, writer))
+}
 
 #[tokio::main]
 async fn main() {
@@ -31,6 +87,37 @@ async fn main() {
     rystra_observe::init_with_level(&config.log_level);
     info!("rystra-server starting...");
     info!(?config, "config loaded");
+
+    // 根据配置创建 Transport 插件
+    let transport: DynTransportPlugin = if config.tls.enabled {
+        info!("TLS enabled, loading certificates...");
+        info!(cert_path = %config.tls.cert_path, key_path = %config.tls.key_path, "certificate paths");
+        
+        // 检查证书文件是否存在
+        if !std::path::Path::new(&config.tls.cert_path).exists() {
+            error!(path = %config.tls.cert_path, "certificate file not found");
+            error!("falling back to TCP");
+            Arc::new(TcpTransportPlugin::new())
+        } else if !std::path::Path::new(&config.tls.key_path).exists() {
+            error!(path = %config.tls.key_path, "key file not found");
+            error!("falling back to TCP");
+            Arc::new(TcpTransportPlugin::new())
+        } else {
+            match TlsTransportPlugin::new_server(&config.tls.cert_path, &config.tls.key_path) {
+                Ok(tls) => {
+                    info!("TLS transport initialized successfully");
+                    Arc::new(tls)
+                }
+                Err(e) => {
+                    error!(error = %e, "failed to initialize TLS, falling back to TCP");
+                    Arc::new(TcpTransportPlugin::new())
+                }
+            }
+        }
+    } else {
+        info!("TLS disabled, using TCP transport");
+        Arc::new(TcpTransportPlugin::new())
+    };
 
     // 将配置放入 Arc<RwLock> 以支持运行时重新加载
     let config = Arc::new(RwLock::new(config));
@@ -75,8 +162,16 @@ async fn main() {
     };
 
     let addr = format!("{}:{}", bind_addr, bind_port);
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    info!(addr = %addr, "listening");
+    
+    // 使用 Transport 插件启动监听器
+    let listener = match transport.listen(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!(error = %e, "failed to start listener");
+            return;
+        }
+    };
+    info!(addr = %addr, transport = %transport.name(), "listening");
 
     loop {
         if shutdown.load(Ordering::SeqCst) {
@@ -89,16 +184,17 @@ async fn main() {
             _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => None,
         };
 
-        if let Some(Ok((stream, addr))) = accept {
-            info!(addr = %addr, "new tcp connection");
+        if let Some(Ok(stream)) = accept {
+            info!("new connection accepted");
             let auth = auth.clone();
             let pm = proxy_manager.clone();
             let cs = client_senders.clone();
             let sw = stream_waiters.clone();
             let shutdown = shutdown.clone();
+            let transport = transport.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, &auth, &pm, &cs, &sw, shutdown, heartbeat_timeout).await {
+                if let Err(e) = handle_connection(stream, &auth, &pm, &cs, &sw, shutdown, heartbeat_timeout, transport).await {
                     error!(error = %e, "connection error");
                 }
             });
@@ -110,25 +206,28 @@ async fn main() {
 }
 
 async fn handle_connection(
-    stream: TcpStream,
+    stream: Box<dyn TransportStream>,
     auth: &TokenAuthPlugin,
     proxy_manager: &Arc<ProxyManager>,
     client_senders: &ClientSenders,
     stream_waiters: &StreamWaiters,
     shutdown: Arc<AtomicBool>,
     heartbeat_timeout: u64,
+    transport: DynTransportPlugin,
 ) -> rystra_model::Result<()> {
-    let (reader, writer) = stream.into_split();
+    // 使用 tokio::io::split 分割流（支持任意 AsyncRead + AsyncWrite）
+    let (reader, writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
     let first_msg = read_message(&mut reader).await?;
 
     match first_msg {
         Message::Hello(hello) => {
-            handle_control(reader, writer, hello, auth, proxy_manager, client_senders, stream_waiters, shutdown, heartbeat_timeout).await
+            handle_control(reader, writer, hello, auth, proxy_manager, client_senders, stream_waiters, shutdown, heartbeat_timeout, transport).await
         }
         Message::StreamReady(ready) => {
             info!(stream_id = ready.stream_id, "data stream ready");
-            let stream = reader.into_inner().reunite(writer).unwrap();
+            // 将读写半部重新组合为一个完整的流
+            let stream = reunite_stream(reader.into_inner(), writer);
             if let Some(tx) = stream_waiters.lock().await.remove(&ready.stream_id) {
                 let _ = tx.send(stream);
             }
@@ -142,8 +241,8 @@ async fn handle_connection(
 }
 
 async fn handle_control(
-    mut reader: BufReader<OwnedReadHalf>,
-    writer: OwnedWriteHalf,
+    mut reader: BufReader<DynReader>,
+    writer: DynWriter,
     hello: rystra_proto::Hello,
     auth: &TokenAuthPlugin,
     proxy_manager: &Arc<ProxyManager>,
@@ -151,6 +250,7 @@ async fn handle_control(
     stream_waiters: &StreamWaiters,
     shutdown: Arc<AtomicBool>,
     heartbeat_timeout: u64,
+    transport: DynTransportPlugin,
 ) -> rystra_model::Result<()> {
     let writer = Arc::new(Mutex::new(writer));
     let mut conn = ControlConnection::new();
@@ -530,8 +630,9 @@ async fn run_proxy_listener(
                 match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
                     Ok(Ok(client_stream)) => {
                         info!(stream_id = stream_id, "relay started");
-                        let (mut ur, mut uw) = user_stream.into_split();
-                        let (mut cr, mut cw) = client_stream.into_split();
+                        // 使用 tokio::io::split 支持任意 AsyncRead + AsyncWrite
+                        let (mut ur, mut uw) = tokio::io::split(user_stream);
+                        let (mut cr, mut cw) = tokio::io::split(client_stream);
                         let _ = tokio::try_join!(
                             tokio::io::copy(&mut ur, &mut cw),
                             tokio::io::copy(&mut cr, &mut uw)
