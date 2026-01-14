@@ -2,7 +2,7 @@ use rystra_auth_token::TokenAuthPlugin;
 use rystra_config::ServerConfig;
 use rystra_core::{read_message, write_message, ConnectionState, ControlConnection, ProxyEntry, ProxyManager};
 use rystra_observe::{error, info, warn};
-use rystra_plugin::{AuthPlugin, TransportPlugin, TransportListener, TransportStream};
+use rystra_plugin::{AuthPlugin, TransportPlugin, TransportStream};
 use rystra_proto::{AuthResponse, Message, OpenStream, RegisterProxyResponse, PROTOCOL_VERSION};
 use rystra_transport_tcp::TcpTransportPlugin;
 use rystra_transport_tls::TlsTransportPlugin;
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{BufReader, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener};
 use tokio::signal;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use hyper::server::conn::http1;
@@ -250,7 +250,7 @@ async fn handle_control(
     stream_waiters: &StreamWaiters,
     shutdown: Arc<AtomicBool>,
     heartbeat_timeout: u64,
-    transport: DynTransportPlugin,
+    _transport: DynTransportPlugin,
 ) -> rystra_model::Result<()> {
     let writer = Arc::new(Mutex::new(writer));
     let mut conn = ControlConnection::new();
@@ -445,19 +445,16 @@ async fn handle_web_request(
     let path = req.uri().path();
 
     // 简单的基本认证检查
-    if let Some(auth_header) = req.headers().get("authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if let Some(basic) = auth_str.strip_prefix("Basic ") {
-                if let Ok(decoded) = base64_decode(basic) {
+    if let Some(auth_header) = req.headers().get("authorization")
+        && let Ok(auth_str) = auth_header.to_str()
+        && let Some(basic) = auth_str.strip_prefix("Basic ")
+        && let Ok(decoded) = base64_decode(basic){
                     let parts: Vec<&str> = decoded.split(':').collect();
                     if parts.len() == 2 && parts[0] == expected_user && parts[1] == expected_password {
                         // 认证成功，处理请求
                         return handle_authenticated_request(path, config).await;
                     }
                 }
-            }
-        }
-    }
 
     // 认证失败
     let response = Response::builder()

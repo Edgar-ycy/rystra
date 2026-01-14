@@ -11,6 +11,6 @@ user = "admin"
 password = "admin"
 
 [tls]
-enabled = true
+enabled = false
 cert_path = "./certificates/server-cert.pem"
 key_path = "./certificates/server-key.pem"

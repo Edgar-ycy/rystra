@@ -1,4 +1,5 @@
 server_addr = "127.0.0.1"
+#server_addr = "223.254.130.92"
 server_port = 8000
 log_level = "info"
 heartbeat_interval = 30
@@ -18,6 +19,6 @@ user = "admin"
 password = "admin"
 
 [tls]
-enabled = true
+enabled = false
 ca_cert_path = "./certificates/ca-cert.pem"
 insecure_skip_verify = true

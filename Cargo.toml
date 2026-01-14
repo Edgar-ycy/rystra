@@ -17,6 +17,7 @@ members = [
     "crates/plugins/proxy/rystra-proxy-tcp",
     "crates/plugins/transport/rystra-transport-tcp",
     "crates/plugins/transport/rystra-transport-tls",
+    "crates/plugins/transport/rystra-transport-http",
     "crates/plugins/auth/rystra-auth-token",
 ]
 [workspace.package]

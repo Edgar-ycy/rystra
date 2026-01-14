@@ -9,8 +9,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncWriteExt, BufReader, WriteHalf};
 use tokio::signal;
 use tokio::sync::Mutex;
 
@@ -238,10 +237,6 @@ async fn handle_stream(
     // 连接本地服务（始终使用 TCP）
     let local = match transport_kind {
         TransportKind::Tcp => {
-            tokio::net::TcpStream::connect(local_target).await?
-        }
-        TransportKind::Tls => {
-            // 本地连接仍用 TCP
             tokio::net::TcpStream::connect(local_target).await?
         }
     };
