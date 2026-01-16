@@ -18,7 +18,14 @@ type DynWriter = WriteHalf<Box<dyn TransportStream>>;
 
 #[tokio::main]
 async fn main() {
-    let config = ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap();
+    // let config = ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap();
+    let config = if cfg!(debug_assertions) {
+        ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap()
+    } else if cfg!(target_os = "linux") || cfg!(target_os = "windows")  {
+        ClientConfig::load_from_file("./client.toml").unwrap()
+    } else {
+        ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap()
+    };
     rystra_observe::init_with_level(&config.log_level);
     info!("rystra-client starting...");
     info!(?config, "config loaded");

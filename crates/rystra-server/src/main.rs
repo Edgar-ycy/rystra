@@ -83,7 +83,18 @@ fn reunite_stream(reader: DynReader, writer: DynWriter) -> Box<dyn TransportStre
 
 #[tokio::main]
 async fn main() {
-    let config = ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap();
+    // 开发模式下
+    // let config = ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap();
+    let config = if cfg!(debug_assertions) {
+        // 开发模式下
+        ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap()
+    } else if cfg!(target_os = "linux") || cfg!(target_os = "windows") {
+        // 生产模式下
+        ServerConfig::load_from_file("./server.toml").unwrap()
+    } else {
+        // 其他情况下
+        ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap()
+    };
     rystra_observe::init_with_level(&config.log_level);
     info!("rystra-server starting...");
     info!(?config, "config loaded");
@@ -92,7 +103,7 @@ async fn main() {
     let transport: DynTransportPlugin = if config.tls.enabled {
         info!("TLS enabled, loading certificates...");
         info!(cert_path = %config.tls.cert_path, key_path = %config.tls.key_path, "certificate paths");
-        
+
         // 检查证书文件是否存在
         if !std::path::Path::new(&config.tls.cert_path).exists() {
             error!(path = %config.tls.cert_path, "certificate file not found");
@@ -162,7 +173,7 @@ async fn main() {
     };
 
     let addr = format!("{}:{}", bind_addr, bind_port);
-    
+
     // 使用 Transport 插件启动监听器
     let listener = match transport.listen(&addr).await {
         Ok(l) => l,
@@ -448,13 +459,13 @@ async fn handle_web_request(
     if let Some(auth_header) = req.headers().get("authorization")
         && let Ok(auth_str) = auth_header.to_str()
         && let Some(basic) = auth_str.strip_prefix("Basic ")
-        && let Ok(decoded) = base64_decode(basic){
-                    let parts: Vec<&str> = decoded.split(':').collect();
-                    if parts.len() == 2 && parts[0] == expected_user && parts[1] == expected_password {
-                        // 认证成功，处理请求
-                        return handle_authenticated_request(path, config).await;
-                    }
-                }
+        && let Ok(decoded) = base64_decode(basic) {
+        let parts: Vec<&str> = decoded.split(':').collect();
+        if parts.len() == 2 && parts[0] == expected_user && parts[1] == expected_password {
+            // 认证成功，处理请求
+            return handle_authenticated_request(path, config).await;
+        }
+    }
 
     // 认证失败
     let response = Response::builder()
@@ -473,14 +484,14 @@ async fn handle_authenticated_request(
     match path {
         "/reload" => {
             info!("received reload request");
-            
+
             // 重新加载配置文件
             match ServerConfig::load_from_file("./crates/rystra-config/server.toml") {
                 Ok(new_config) => {
                     let mut cfg = config.write().await;
                     *cfg = new_config;
                     info!("configuration reloaded successfully");
-                    
+
                     let response = Response::builder()
                         .status(StatusCode::OK)
                         .body(Full::new(Bytes::from(
@@ -488,7 +499,7 @@ async fn handle_authenticated_request(
                                 "status": "success",
                                 "message": "Configuration reloaded successfully"
                             })
-                            .to_string(),
+                                .to_string(),
                         )))
                         .unwrap();
                     Ok(response)
@@ -502,7 +513,7 @@ async fn handle_authenticated_request(
                                 "status": "error",
                                 "message": format!("Failed to reload: {}", e)
                             })
-                            .to_string(),
+                                .to_string(),
                         )))
                         .unwrap();
                     Ok(response)
@@ -517,7 +528,7 @@ async fn handle_authenticated_request(
                     serde_json::json!({
                         "status": "ok"
                     })
-                    .to_string(),
+                        .to_string(),
                 )))
                 .unwrap();
             Ok(response)
@@ -535,13 +546,13 @@ async fn handle_authenticated_request(
 /// 简单的 Base64 解码
 fn base64_decode(input: &str) -> Result<String, ()> {
     use std::str;
-    
+
     // 简单实现，实际生产应使用 base64 crate
     let bytes = match base64_decode_bytes(input) {
         Ok(b) => b,
         Err(_) => return Err(()),
     };
-    
+
     match str::from_utf8(&bytes) {
         Ok(s) => Ok(s.to_string()),
         Err(_) => Err(()),
@@ -553,10 +564,10 @@ fn base64_decode_bytes(input: &str) -> Result<Vec<u8>, ()> {
     let table: Vec<u8> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
         .bytes()
         .collect();
-    
+
     let mut result = Vec::new();
     let chars: Vec<char> = input.chars().filter(|c| !c.is_whitespace()).collect();
-    
+
     let mut i = 0;
     while i < chars.len() {
         let mut buf = [0u8; 4];
@@ -569,7 +580,7 @@ fn base64_decode_bytes(input: &str) -> Result<Vec<u8>, ()> {
                 }
             }
         }
-        
+
         result.push((buf[0] << 2) | (buf[1] >> 4));
         if i + 2 < chars.len() && chars[i + 2] != '=' {
             result.push((buf[1] << 4) | (buf[2] >> 2));
@@ -577,10 +588,10 @@ fn base64_decode_bytes(input: &str) -> Result<Vec<u8>, ()> {
         if i + 3 < chars.len() && chars[i + 3] != '=' {
             result.push((buf[2] << 6) | buf[3]);
         }
-        
+
         i += 4;
     }
-    
+
     Ok(result)
 }
 
