@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// 协议版本
 pub const PROTOCOL_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

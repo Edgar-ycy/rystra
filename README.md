@@ -57,20 +57,20 @@ rystra/
 │  ├── rystra-testkit/              # 集成测试工具
 │  └── plugins/
 │     ├── proxy/
-│     │  ├── rystra-proxy-tcp/      # ✅ MVP
-│     │  ├── rystra-proxy-http/     # 规划
-│     │  └── rystra-proxy-udp/      # 规划
+│     │  ├── rystra-proxy-tcp/      # TCP代理
+│     │  ├── rystra-proxy-http/     # HTTP代理
+│     │  └── rystra-proxy-udp/      # udp代理
 │     ├── transport/
-│     │  ├── rystra-transport-tcp/  # ✅ MVP
-│     │  ├── rystra-transport-tls/  # ✅ 已完成
+│     │  ├── rystra-transport-tcp/  # TCP传输
+│     │  ├── rystra-transport-tls/  # TLS加密传输
 │     │  └── rystra-transport-quic/ # 规划
 │     ├── auth/
-│     │  ├── rystra-auth-token/     # ✅ MVP
-│     │  └── rystra-auth-mtls/      # 规划
+│     │  ├── rystra-auth-token/     # Token认证
+│     │  └── rystra-auth-mtls/      # mTLS双向认证（规划）
 │     ├── hook/
-│     │  └── rystra-hook-rate/      # 规划
+│     │  └── rystra-hook-rate/      # 速率限制
 │     └── mux/
-│        └── rystra-mux-smux/       # 规划
+│        └── rystra-mux-smux/       # SMUX多路复用
 ```
 
 ---
@@ -79,9 +79,9 @@ rystra/
 
 依赖方向（自下而上）：
 
-1. `rystra-model`
-2. `rystra-proto`
-3. `rystra-plugin`
+1. `rystra-model`  ---错误模型
+2. `rystra-proto` 协议
+3. `rystra-plugin` 传输层插件 trait TransportPlugin
 4. `plugins/*`
 5. `rystra-core`
 6. `rystra-server / rystra-client / rystra-cli`

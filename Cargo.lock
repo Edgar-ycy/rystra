@@ -638,6 +638,10 @@ version = "0.1.0"
 [[package]]
 name = "rystra-runtime"
 version = "0.1.0"
+dependencies = [
+ "rystra-plugin",
+ "tokio",
+]
 
 [[package]]
 name = "rystra-server"
@@ -653,9 +657,9 @@ dependencies = [
  "rystra-observe",
  "rystra-plugin",
  "rystra-proto",
+ "rystra-runtime",
  "rystra-transport-tcp",
  "rystra-transport-tls",
- "serde",
  "serde_json",
  "tokio",
 ]
@@ -665,18 +669,6 @@ name = "rystra-testkit"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
-]
-
-[[package]]
-name = "rystra-transport-http"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hyper",
- "hyper-util",
- "rystra-model",
- "rystra-plugin",
- "tokio",
 ]
 
 [[package]]

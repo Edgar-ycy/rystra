@@ -2,12 +2,12 @@ use rystra_config::{ClientConfig, TransportKind};
 use rystra_core::{read_message, write_message};
 use rystra_observe::{error, info, warn};
 use rystra_plugin::{TransportPlugin, TransportStream};
-use rystra_proto::{AuthRequest, Hello, Message, RegisterProxy, StreamReady, PROTOCOL_VERSION};
+use rystra_proto::{AuthRequest, Hello, Message, PROTOCOL_VERSION, RegisterProxy, StreamReady};
 use rystra_transport_tcp::TcpTransportPlugin;
 use rystra_transport_tls::TlsTransportPlugin;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tokio::io::{AsyncWriteExt, BufReader, WriteHalf};
 use tokio::signal;
@@ -21,7 +21,7 @@ async fn main() {
     // let config = ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap();
     let config = if cfg!(debug_assertions) {
         ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap()
-    } else if cfg!(target_os = "linux") || cfg!(target_os = "windows")  {
+    } else if cfg!(target_os = "linux") || cfg!(target_os = "windows") {
         ClientConfig::load_from_file("./client.toml").unwrap()
     } else {
         ClientConfig::load_from_file("./crates/rystra-config/client.toml").unwrap()
@@ -48,7 +48,7 @@ async fn main() {
         } else {
             info!("TLS secure mode, loading CA certificate...");
             info!(ca_cert_path = %config.tls.ca_cert_path, "CA certificate path");
-            
+
             // 检查 CA 证书文件是否存在
             if !std::path::Path::new(&config.tls.ca_cert_path).exists() {
                 error!(path = %config.tls.ca_cert_path, "CA certificate file not found");
@@ -103,7 +103,11 @@ async fn main() {
     info!("client stopped");
 }
 
-async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTransportPlugin) -> rystra_model::Result<()> {
+async fn run(
+    config: &ClientConfig,
+    shutdown: Arc<AtomicBool>,
+    transport: DynTransportPlugin,
+) -> rystra_model::Result<()> {
     let server_addr = format!("{}:{}", config.server_addr, config.server_port);
     info!(addr = %server_addr, transport = %transport.name(), "connecting");
 
@@ -140,7 +144,9 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTra
         info!("authenticated");
     }
 
-    let proxy_map: Arc<Mutex<HashMap<String, (String, u16, TransportKind)>>> = Arc::new(Mutex::new(HashMap::new()));
+    type ProxyInfo = (String, u16, TransportKind);
+    type ProxyMap = Arc<Mutex<HashMap<String, ProxyInfo>>>;
+    let proxy_map: ProxyMap = Arc::new(Mutex::new(HashMap::new()));
     for p in &config.proxies {
         let reg = Message::RegisterProxy(RegisterProxy {
             name: p.name.clone(),
@@ -152,7 +158,10 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTra
             let mut w = writer.lock().await;
             write_message(&mut *w, &reg).await?;
         }
-        proxy_map.lock().await.insert(p.name.clone(), (p.local_ip.clone(), p.local_port, p.kind.clone()));
+        proxy_map.lock().await.insert(
+            p.name.clone(),
+            (p.local_ip.clone(), p.local_port, p.kind.clone()),
+        );
 
         let resp = read_message(&mut reader).await?;
         info!(?resp, "proxy registered");
@@ -169,7 +178,9 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTra
     tokio::spawn(async move {
         while !shutdown_hb.load(Ordering::SeqCst) {
             tokio::time::sleep(std::time::Duration::from_secs(heartbeat_interval)).await;
-            if shutdown_hb.load(Ordering::SeqCst) { break; }
+            if shutdown_hb.load(Ordering::SeqCst) {
+                break;
+            }
             let mut w = writer_hb.lock().await;
             if write_message(&mut *w, &Message::Heartbeat).await.is_err() {
                 break;
@@ -216,7 +227,15 @@ async fn run(config: &ClientConfig, shutdown: Arc<AtomicBool>, transport: DynTra
                     let transport_clone = transport.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) = handle_stream(stream_id, &server_addr, &local_target, transport_kind, transport_clone).await {
+                        if let Err(e) = handle_stream(
+                            stream_id,
+                            &server_addr,
+                            &local_target,
+                            transport_kind,
+                            transport_clone,
+                        )
+                        .await
+                        {
                             error!(stream_id = stream_id, error = %e, "stream error");
                         }
                     });
@@ -243,9 +262,7 @@ async fn handle_stream(
 ) -> rystra_model::Result<()> {
     // 连接本地服务（始终使用 TCP）
     let local = match transport_kind {
-        TransportKind::Tcp => {
-            tokio::net::TcpStream::connect(local_target).await?
-        }
+        TransportKind::Tcp => tokio::net::TcpStream::connect(local_target).await?,
     };
 
     // 使用 Transport 插件连接 Server（支持 TCP/TLS）

@@ -3,6 +3,7 @@ use rystra_model::{Error, Result};
 use rystra_proto::Message;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
+
 pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut BufReader<R>) -> Result<Message> {
     let mut line = String::new();
     let n = reader

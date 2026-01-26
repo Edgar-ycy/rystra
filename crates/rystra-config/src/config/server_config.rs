@@ -1,6 +1,6 @@
-use crate::ConfigValidation;
-use crate::config::web_server_config::WebServerConfig;
 use crate::config::tls_config::TlsConfig;
+use crate::config::web_server_config::WebServerConfig;
+use crate::ConfigValidation;
 use rystra_model::Error;
 use serde::{Deserialize, Serialize};
 use std::fs;

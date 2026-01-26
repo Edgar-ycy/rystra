@@ -5,3 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+#tokio = { workspace = true, features = ["io-util"] }
+#rystra-model = { path = "../../../rystra-model" }
+#tracing = { workspace = true }

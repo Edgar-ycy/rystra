@@ -17,13 +17,12 @@ members = [
     "crates/plugins/proxy/rystra-proxy-tcp",
     "crates/plugins/transport/rystra-transport-tcp",
     "crates/plugins/transport/rystra-transport-tls",
-    "crates/plugins/transport/rystra-transport-http",
     "crates/plugins/auth/rystra-auth-token",
 ]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 
 [workspace.dependencies]
 

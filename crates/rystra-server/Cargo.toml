@@ -14,8 +14,8 @@ rystra-observe = { path = "../rystra-observe" }
 rystra-auth-token = { path = "../plugins/auth/rystra-auth-token" }
 rystra-transport-tcp = { path = "../plugins/transport/rystra-transport-tcp" }
 rystra-transport-tls = { path = "../plugins/transport/rystra-transport-tls" }
+rystra-runtime = { path = "../rystra-runtime" }
 tokio.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 hyper.workspace = true
 http-body-util.workspace = true

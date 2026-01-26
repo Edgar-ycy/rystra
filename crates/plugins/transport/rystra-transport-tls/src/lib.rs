@@ -227,7 +227,7 @@ mod danger {
             _server_name: &ServerName<'_>,
             _ocsp_response: &[u8],
             _now: UnixTime,
-        ) -> std::result::Result<ServerCertVerified, Error> {
+        ) -> Result<ServerCertVerified, Error> {
             Ok(ServerCertVerified::assertion())
         }
 
@@ -236,7 +236,7 @@ mod danger {
             _message: &[u8],
             _cert: &CertificateDer<'_>,
             _dss: &DigitallySignedStruct,
-        ) -> std::result::Result<HandshakeSignatureValid, Error> {
+        ) -> Result<HandshakeSignatureValid, Error> {
             Ok(HandshakeSignatureValid::assertion())
         }
 
@@ -245,7 +245,7 @@ mod danger {
             _message: &[u8],
             _cert: &CertificateDer<'_>,
             _dss: &DigitallySignedStruct,
-        ) -> std::result::Result<HandshakeSignatureValid, Error> {
+        ) -> Result<HandshakeSignatureValid, Error> {
             Ok(HandshakeSignatureValid::assertion())
         }
 

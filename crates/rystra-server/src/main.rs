@@ -1,25 +1,26 @@
+use http_body_util::Full;
+use hyper::body::Bytes;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{body::Incoming, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use rystra_auth_token::TokenAuthPlugin;
 use rystra_config::ServerConfig;
 use rystra_core::{read_message, write_message, ConnectionState, ControlConnection, ProxyEntry, ProxyManager};
 use rystra_observe::{error, info, warn};
 use rystra_plugin::{AuthPlugin, TransportPlugin, TransportStream};
 use rystra_proto::{AuthResponse, Message, OpenStream, RegisterProxyResponse, PROTOCOL_VERSION};
+use rystra_runtime::ReunitedStream;
 use rystra_transport_tcp::TcpTransportPlugin;
 use rystra_transport_tls::TlsTransportPlugin;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{BufReader, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
-use tokio::net::{TcpListener};
+use tokio::io::{BufReader, ReadHalf, WriteHalf};
+use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Request, Response, body::Incoming, StatusCode};
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper_util::rt::TokioIo;
 
 static STREAM_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -30,61 +31,11 @@ type DynReader = ReadHalf<Box<dyn TransportStream>>;
 type DynWriter = WriteHalf<Box<dyn TransportStream>>;
 
 /// 将读写半部重新组合为一个完整的 TransportStream
-struct ReunitedStream {
-    reader: DynReader,
-    writer: DynWriter,
-}
 
-impl ReunitedStream {
-    fn new(reader: DynReader, writer: DynWriter) -> Self {
-        Self { reader, writer }
-    }
-}
-
-impl AsyncRead for ReunitedStream {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.reader).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for ReunitedStream {
-    fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        std::pin::Pin::new(&mut self.writer).poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.writer).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.writer).poll_shutdown(cx)
-    }
-}
-
-impl TransportStream for ReunitedStream {}
-
-fn reunite_stream(reader: DynReader, writer: DynWriter) -> Box<dyn TransportStream> {
-    Box::new(ReunitedStream::new(reader, writer))
-}
 
 #[tokio::main]
 async fn main() {
     // 开发模式下
-    // let config = ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap();
     let config = if cfg!(debug_assertions) {
         // 开发模式下
         ServerConfig::load_from_file("./crates/rystra-config/server.toml").unwrap()
@@ -237,8 +188,8 @@ async fn handle_connection(
         }
         Message::StreamReady(ready) => {
             info!(stream_id = ready.stream_id, "data stream ready");
-            // 将读写半部重新组合为一个完整的流
-            let stream = reunite_stream(reader.into_inner(), writer);
+            // 将读写半部，重新组合为一个完整的流
+            let stream = Box::new(ReunitedStream::new(reader.into_inner(), writer));
             if let Some(tx) = stream_waiters.lock().await.remove(&ready.stream_id) {
                 let _ = tx.send(stream);
             }
@@ -274,15 +225,20 @@ async fn handle_control(
     conn.set_client_id(hello.client_id.clone());
     conn.transition_to(ConnectionState::Authenticating);
 
+    // 创建一个容量为32的消息通道，用于异步发送消息给客户端
     let (tx, mut rx) = mpsc::channel::<Message>(32);
+    // 将发送器添加到全局客户端发送器集合中，以客户端ID作为键
     client_senders.lock().await.insert(hello.client_id.clone(), tx.clone());
 
     info!(conn_id = conn.id, client_id = %hello.client_id, "control connection, waiting auth");
 
     let writer_clone = writer.clone();
+    // 启动一个异步任务，持续从rx接收消息并写入客户端
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
+            // 锁定写入器进行线程安全访问
             let mut w = writer_clone.lock().await;
+            // 将消息写入客户端，出错则退出循环
             if write_message(&mut *w, &msg).await.is_err() {
                 break;
             }
@@ -292,16 +248,19 @@ async fn handle_control(
     let mut last_heartbeat = Instant::now();
     let timeout_duration = std::time::Duration::from_secs(heartbeat_timeout);
 
+    // 主循环：处理来自客户端的各种消息
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
 
+        // 如果连接已就绪且心跳超时，则断开连接
         if conn.is_ready() && last_heartbeat.elapsed() > timeout_duration {
             warn!(conn_id = conn.id, "heartbeat timeout");
             break;
         }
 
+        // 尝试从读取器中读取消息，或等待1秒
         let read = tokio::select! {
             r = read_message(&mut reader) => Some(r),
             _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => None,

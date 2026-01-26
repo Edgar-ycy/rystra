@@ -5,3 +5,5 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+tokio.workspace = true
+rystra-plugin = { path = "../rystra-plugin" }
